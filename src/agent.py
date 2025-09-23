@@ -338,12 +338,35 @@ User request: {state["user_input"]}
                     tool_call_id=tool_call.get('id', tool_name)
                 ))
 
-    # TODO: Complete the calculation_agent function.
+    # COMPLETED: Complete the calculation_agent function.
     # Generate a structured response that includes the expression and step-by-step explanation.
     # Refer to README.md Task 2.3 for detailed implementation requirements.
     
-    # Your implementation here
-    pass
+    structured_llm = llm.with_structured_output(CalculationResponse)
+    final_prompt = f"""
+Based on the calculation just performed, provide a clear, step-by-step explanation of how you 
+arrived at the result for: {state['user_input']}
+
+Include:
+- The mathematical expression used
+- The result
+- A step-by-step explanation
+- Any relevant units or sources
+"""
+    messages.append(HumanMessage(content=final_prompt))
+    response = structured_llm.invoke(messages)
+
+    # Fill in missing fields if possible
+    if not response.expression and expression:
+        response.expression = expression
+    if not response.result and calc_result is not None:
+        response.result = calc_result
+
+    state["current_response"] = response.dict()
+    state["tools_used"] = tools_used
+    state["next_step"] = "update_memory"
+    return state
+
 
 # TODO: Implement the update_memory function.
 # This function updates the conversation history and manages the state after each interaction.
