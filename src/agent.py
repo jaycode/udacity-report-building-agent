@@ -372,14 +372,27 @@ def create_workflow(llm, tools):
     """
     graph = StateGraph(AgentState)
 
-    def classify_intent_node(state: AgentState):
-        return classify_intent(state, llm)
-    
-    graph.add_node("classify_intent", classify_intent_node)
+    # Nodes setup
+    graph.add_node("classify_intent", lambda state: classify_intent(state, llm))
     graph.set_entry_point("classify_intent")
-
-    def summarization_agent_node(state: AgentState):
-        return summarization_agent(state, llm, tools)
     
-    graph.add_node("summarization", summarization_agent_node)
+    graph.add_node("qa_agent", lambda state: qa_agent(state, llm, tools))
+    graph.add_node("summarization_agent", lambda state: summarization_agent(state, llm, tools))
+    graph.add_node("calculation_agent", lambda state: calculation_agent(state, llm, tools))
+    
+    graph.add_node("update_memory", update_memory)
+    graph.add_node("end", lambda state: state)
+
+    # Routing
+    graph.add_conditional_edges(
+        "classify_intent",  # from node
+        should_continue,    # routing function
+        {
+            "qa_agent": "qa_agent",
+            "summarization_agent": "summarization_agent",
+            "calculation_agent": "calculation_agent",
+            "end": END
+        }
+    )
+
     return graph.compile()
