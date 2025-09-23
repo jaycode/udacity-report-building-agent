@@ -38,12 +38,17 @@ class CalculationResponse(BaseModel):
     units: Optional[str] = Field(default=None, description="Units if applicable")
     timestamp: datetime = Field(default_factory=datetime.now)
 
-# TODO: Implement the UserIntent schema for intent classification.
+# COMPLETED: Implement the UserIntent schema for intent classification.
 # This schema should include fields for intent_type, confidence, and reasoning.
 # Refer to README.md Task 1.2 for detailed field requirements.
 class UserIntent(BaseModel):
-    """User intent classification - TO BE IMPLEMENTED"""
-    pass
+    """User intent classification"""
+    intent_type: Literal["qa", "summarization", "calculation", "unknown"] = \
+        Field(description='The classified intent ("qa", "summarization", "calculation", or "unknown")')
+    confidence: float = Field(description="Confidence in classification (float between 0 and 1)",
+                              ge=0,
+                              le=1)
+    reasoning: str = Field(description="Explanation for the classification (string)")
 
 
 class ConversationTurn(BaseModel):

@@ -9,6 +9,7 @@ from schemas import (
     AnswerResponse, SummarizationResponse, CalculationResponse
 )
 from prompts import get_intent_classification_prompt, get_chat_prompt_template
+import pdb
 
 # The AgentState class is already implemented for you. 
 # Study the structure to understand how state flows through the LangGraph workflow.
@@ -38,15 +39,37 @@ class AgentState(TypedDict):
     session_id: str
     user_id: str
 
-# TODO: Implement the classify_intent function.
+# COMPLETED: Implement the classify_intent function.
 # This function should classify the user's intent and set the next step in the workflow.
 # Refer to README.md Task 2.2 for detailed implementation requirements.
 def classify_intent(state: AgentState, llm) -> AgentState:
     """
-    Classify user intent - TO BE IMPLEMENTED
+    Classify user intent
     """
-    # Your implementation here
-    pass
+    messages = []
+    system_msg = (
+        "You classify user intent for routing. "
+        "Return a JSON object with fields intent_type, confidence, reasoning. "
+        "intent_type must be one of: qa, summarization, calculation. "
+        "If you are not sure, pick qa"
+        "Use the conversation summary and recent turns as context."
+    )
+
+    messages.append(SystemMessage(content=system_msg))
+    # Add conversation history
+    for msg in state.get("messages", [])[-4:]:  # Last 4 messages
+        messages.append(msg)
+    
+    messages.append(HumanMessage(content=state["user_input"]))
+
+    structured_llm = llm.with_structured_output(UserIntent)
+
+    # Get structured response
+    user_intent = structured_llm.invoke(messages)
+    state["intent"] = user_intent
+    mapping = {"qa": "qa_agent", "summarization": "summarization_agent", "calculation": "calculation_agent"}
+    state["next_step"] = mapping.get(user_intent.intent_type, "qa_agent")
+    return state
 
 
 def qa_agent(state: AgentState, llm, tools) -> AgentState:
@@ -178,6 +201,7 @@ Current conversation context: {state.get('conversation_summary', 'No previous co
 
 User request: {state["user_input"]}
 """
+    pdb.set_trace()
     messages.append(SystemMessage(content=system_msg))
     
     # Add conversation history
@@ -339,12 +363,23 @@ def should_continue(state: AgentState) -> Literal["qa_agent", "summarization_age
     """
     return state.get("next_step", "end")
 
-# TODO: Implement the create_workflow function.
+# COMPLETED: Implement the create_workflow function.
 # This function creates the LangGraph workflow that coordinates all the agents.
 # Refer to README.md Task 2.5 for detailed implementation requirements and the graph structure.
 def create_workflow(llm, tools):
     """
-    Creates the LangGraph workflow - TO BE IMPLEMENTED
+    Creates the LangGraph workflow
     """
-    # Your implementation here
-    pass
+    graph = StateGraph(AgentState)
+
+    def classify_intent_node(state: AgentState):
+        return classify_intent(state, llm)
+    
+    graph.add_node("classify_intent", classify_intent_node)
+    graph.set_entry_point("classify_intent")
+
+    def summarization_agent_node(state: AgentState):
+        return summarization_agent(state, llm, tools)
+    
+    graph.add_node("summarization", summarization_agent_node)
+    return graph.compile()

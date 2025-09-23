@@ -11,7 +11,7 @@ from retrieval import SimulatedRetriever
 from tools import get_all_tools, ToolLogger
 from agent import create_workflow, AgentState
 from prompts import MEMORY_SUMMARY_PROMPT
-
+import pdb
 
 class DocumentAssistant:
     """
@@ -145,7 +145,7 @@ class DocumentAssistant:
         """
         if not self.current_session:
             raise ValueError("No active session. Call start_session() first.")
-        
+
         # Prepare initial state
         initial_state: AgentState = {
             "messages": [],
