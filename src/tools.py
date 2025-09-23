@@ -53,15 +53,38 @@ class ToolLogger:
         with open(filepath, 'w') as f:
             json.dump(self.logs, f, indent=2)
 
-# TODO: Implement the calculator tool using the @tool decorator.
+# COMPLETED: Implement the calculator tool using the @tool decorator.
 # This tool should safely evaluate mathematical expressions and log its usage.
 # Refer to README.md Task 4.1 for detailed implementation requirements.
 def create_calculator_tool(logger: ToolLogger):
     """
-    Creates a calculator tool - TO BE IMPLEMENTED
+    Creates a calculator tool
     """
-    # Your implementation here
-    pass
+    SAFE_PATTERN = r'^[\d\s\.\+\-\*\/\%\(\)]+$'  # Only digits, math ops, parentheses, dot
+
+    @tool
+    def calculator(expression: str) -> str:
+        """
+        Evaluate a mathematical expression and return the result.
+        Allowed operations: +, -, *, /, %, parentheses, decimals.
+        Example: "2 + 2 * (5 - 3)"
+        """
+        # Validate expression
+        if not re.match(SAFE_PATTERN, expression):
+            error_msg = "Invalid expression: Only numbers and basic math operators (+, -, *, /, %, parentheses) are allowed."
+            logger.log_tool_use("calculator", {"expression": expression}, {"error": error_msg})
+            return error_msg
+        try:
+            # Safe eval: no builtins, no variables
+            result = eval(expression, {"__builtins__": None}, {})
+            logger.log_tool_use("calculator", {"expression": expression}, {"result": result})
+            return f"The result of {expression} is {result}"
+        except Exception as e:
+            error_msg = f"Error evaluating expression: {str(e)}"
+            logger.log_tool_use("calculator", {"expression": expression}, {"error": error_msg})
+            return error_msg
+
+    return calculator
 
 
 def create_document_search_tool(retriever, logger: ToolLogger):

@@ -201,7 +201,6 @@ Current conversation context: {state.get('conversation_summary', 'No previous co
 
 User request: {state["user_input"]}
 """
-    pdb.set_trace()
     messages.append(SystemMessage(content=system_msg))
     
     # Add conversation history
