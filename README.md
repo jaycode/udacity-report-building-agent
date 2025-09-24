@@ -1,234 +1,92 @@
-# Document Assistant Project Instructions
+# DocDacity Intelligent Document Assistant
 
-Welcome to the Document Assistant project! This project will help you build a sophisticated document processing system using LangChain and LangGraph. You'll create an AI assistant that can answer questions, summarize documents, and perform calculations on financial and healthcare documents.
+DocDacity is an interactive assistant for Q&A, summarization, and calculation tasks over simulated financial and healthcare documents. It uses LangChain, LangGraph, and OpenAI LLMs to orchestrate complex workflows and structured outputs, providing clear, source-cited answers and summaries.
 
-## Project Overview
+---
 
-This document assistant uses a multi-agent architecture with LangGraph to handle different types of user requests:
-- **Q&A Agent**: Answers specific questions about document content
-- **Summarization Agent**: Creates summaries and extracts key points from documents
-- **Calculation Agent**: Performs mathematical operations on document data
+## Implementation Decisions
 
-### Prerequisites
-- Python 3.9+
-- OpenAI API key
+- **LangGraph Workflow**: The assistant uses a stateful workflow graph, where user input is classified for intent (`qa`, `summarization`, `calculation`) and routed to specialized agent nodes.
+- **Tool Use**: Agents use tools (`document_search`, `document_reader`, `calculator`, `document_statistics`) to retrieve information and perform calculations, with all usage logged for compliance.
+- **Structured Output**: All agent responses are enforced to match Pydantic schemas (`AnswerResponse`, `SummarizationResponse`, `CalculationResponse`) for reliability and consistency.
+- **Session & Memory**: Conversation history and active documents are persisted by session, enabling context-aware answers and memory summaries.
 
-### Installation
+---
 
-1. Clone the repository:
-```bash
-cd <repository_path>
-```
+## How State & Memory Work
 
-2. Create a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+- **AgentState**: Tracks messages, intent, next step, conversation history, document context, responses, and tools used for each turn.
+- **ConversationTurn**: Each user/assistant interaction is stored as a structured object, including intent, response, and tools used.
+- **SessionState**: Manages overall session, history, current documents, and timestamps.
+- **Memory Update**: After each turn, the agent updates conversation history, message history, and active documents, ensuring continuity across interactions.
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+# IMPORTANT NOTE
 
-4. Create a `.env` file:
-```bash
-cp .env.example .env
-# Edit .env and add your OpenAI API key
-```
+**Memory update** is already implemented in the `assistant` module
 
-### Running the Assistant
+---
 
-```bash
-python main.py
-```
+## Structured Output Enforcement
 
-## Project Structure
-```
-doc_assistant_project/
-├── src/
-│   ├── schemas.py        # Pydantic models
-│   ├── retrieval.py      # Document retrieval
-│   ├── tools.py          # Agent tools
-│   ├── prompts.py        # Prompt templates
-│   ├── agent.py          # LangGraph workflow
-│   └── assistant.py      # Main agent
-├── sessions/             # Saved conversation sessions
-├── main.py               # Entry point
-├── requirements.txt      # Dependencies
-└── README.md             # This file
-```
+- Each agent node uses `llm.with_structured_output` with the relevant schema.
+- Responses must include required fields (e.g., sources for QA, key points for summaries, step-by-step explanations for calculations).
+- Invalid or missing fields are filled using workflow logic before finalizing the response.
 
+---
 
+## Example Conversations
 
-## Agent Architecture
+### Q&A
 
-The LangGraph agent follows this workflow:
+**User:** What's the total amount in invoice INV-001?  
+**Assistant:** The total amount in invoice INV-001 is $22,000.  
+**Sources:** INV-001
 
-![](./docs/langgraph_agent_architecture.png)
+### Summarization
 
-## Implementation Tasks
+**User:** Summarize all contracts.  
+**Assistant:**  
+DocDacity Solutions Inc. provides platform access, technical support, and monthly reports for Healthcare Partners LLC.  
+**Key Points:**  
+• 12-month contract  
+• Monthly fee: $15,000  
+• Total value: $180,000  
+**Documents Analyzed:** CON-001
 
-### 1. Schema Implementation (schemas.py)
+### Calculation
 
-#### Task 1.1: AnswerResponse Schema
-Create a Pydantic model for structured Q&A responses with the following fields:
-- `question`: The original user question (string)
-- `answer`: The generated answer (string)
-- `sources`: List of source document IDs used (list of strings)
-- `confidence`: Confidence score between 0 and 1 (float)
-- `timestamp`: When the response was generated (datetime)
+**User:** Calculate the sum of all invoice totals.  
+**Assistant:**  
+Step 1: Invoice INV-001 total is $22,000.  
+Step 2: Invoice INV-002 total is $69,300.  
+Step 3: Invoice INV-003 total is $214,500.  
+Sum: $305,800
 
-**Purpose**: This schema ensures consistent formatting of answers and tracks which documents were referenced.
+### Document Search
 
-#### Task 1.2: UserIntent Schema
-Create a Pydantic model for intent classification with these fields:
-- `intent_type`: The classified intent ("qa", "summarization", "calculation", or "unknown")
-- `confidence`: Confidence in classification (float between 0 and 1)
-- `reasoning`: Explanation for the classification (string)
+**User:** Find documents over $50,000  
+**Assistant:** Found 2 documents: INV-002 ($69,300), INV-003 ($214,500)
 
-**Purpose**: This schema helps the system understand what type of request the user is making and route it to the appropriate agent.
+---
 
-### 2. Agent State Implementation (agent.py)
+## How to Run
 
-#### Task 2.1: AgentState Properties
-The `AgentState` class is already defined, but you need to understand its structure:
-- `messages`: Conversation messages with LangGraph message annotation
-- `user_input`: Current user input
-- `intent`: Classified user intent
-- `next_step`: Next node to execute in the graph
-- `conversation_history`: Previous conversation turns
-- `conversation_summary`: Summary of recent conversation
-- `active_documents`: Document IDs currently being discussed
-- `current_response`: The response being built
-- `tools_used`: List of tools used in current turn
-- `session_id` and `user_id`: Session management
+1. Install requirements:  
+   `pip install -r requirements.txt`
+2. Ensure your OpenAI API key is in `.env`.
+3. Start the CLI:  
+   `python main.py`
+4. Try commands like `/help`, `/history`, `/docs`, or ask questions as shown above.
 
-#### Task 2.2: Intent Classification Function
-Implement the `classify_intent` function that:
-1. Formats the conversation history for context
-2. Uses the LLM with structured output to classify the user's intent
-3. Sets the `next_step` based on the classified intent:
-   - "qa" --> "qa_agent"
-   - "summarization" --> "summarization_agent"
-   - "calculation" --> "calculation_agent"
-   - default --> "qa_agent"
+---
 
-**Key concepts**: 
-- Use `llm.with_structured_output(UserIntent)` for structured responses
-- Include conversation history for better context understanding
-- The function should return the updated state
+## Features
 
-#### Task 2.3: Calculation Agent Completion
-Complete the `calculation_agent` function by implementing the final response generation:
-1. Use `llm.with_structured_output(CalculationResponse)` to get a structured response
-2. Create a prompt asking for a clear explanation of the calculation
-3. Ensure the response includes the expression and step-by-step explanation
-4. Update the state with the response and return it
+- Q&A with source citation
+- Document summarization
+- Step-by-step financial calculations
+- Session memory and context
+- Document search and statistics
+- Tool usage logging for compliance
 
-#### Task 2.4: Memory Update Function
-Implement the `update_memory` function that:
-1. Creates a `ConversationTurn` object from the current interaction
-2. Adds the turn to the conversation history
-3. Updates the message history with user input and agent response
-4. Tracks active documents from the response
-5. Sets `next_step` to "end"
-
-**Purpose**: This function maintains conversation context and tracks document references across turns.
-
-#### Task 2.5: Workflow Creation
-Implement the `create_workflow` function that:
-1. Creates a `StateGraph` with the `AgentState`
-2. Adds all agent nodes (classify_intent, qa_agent, summarization_agent, calculation_agent, update_memory)
-3. Sets "classify_intent" as the entry point
-4. Adds conditional edges from classify_intent to the appropriate agents
-5. Adds edges from each agent to update_memory
-6. Adds edge from update_memory to END
-7. Returns the compiled workflow
-
-**Graph Structure**:
-```
-classify_intent --> [qa_agent|summarization_agent|calculation_agent] --> update_memory --> END
-```
-
-### 3. Prompt Implementation (prompts.py)
-
-#### Task 3.1: Intent Classification Prompt
-Implement the `get_intent_classification_prompt` function that returns a `PromptTemplate` with:
-- Input variables: `["user_input", "conversation_history"]`
-- Template that instructs the LLM to classify intent into qa, summarization, calculation, or unknown
-- Clear examples and guidelines for each intent type
-- Instructions to provide confidence score and reasoning
-
-**Purpose**: This prompt helps the LLM accurately classify user intents for proper routing.
-
-#### Task 3.2: Chat Prompt Template
-Implement the `get_chat_prompt_template` function that:
-1. Takes an `intent_type` parameter
-2. Selects the appropriate system prompt based on intent type
-3. Returns a `ChatPromptTemplate` with system message, chat history placeholder, and human message
-4. Uses the existing system prompts (QA_SYSTEM_PROMPT, SUMMARIZATION_SYSTEM_PROMPT, CALCULATION_SYSTEM_PROMPT)
-
-**Purpose**: This provides context-aware prompts for different types of tasks.
-
-### 4. Tool Implementation (tools.py)
-
-#### Task 4.1: Calculator Tool
-Implement the `create_calculator_tool` function that:
-1. Uses the `@tool` decorator to create a LangChain tool
-2. Takes a mathematical expression as input
-3. Validates the expression for safety (only allow basic math operations)
-4. Evaluates the expression using Python's `eval()` function
-5. Logs the tool usage with the ToolLogger
-6. Returns a formatted result string
-7. Handles errors gracefully
-
-## Key Concepts for Success
-
-### 1. LangChain Tool Pattern
-Tools are functions decorated with `@tool` that can be called by LLMs. They must:
-- Have clear docstrings describing their purpose and parameters
-- Handle errors gracefully
-- Return string results
-- Log their usage for debugging
-
-### 2. LangGraph State Management
-The state flows through nodes and gets updated at each step. Key principles:
-- Always return the updated state from node functions
-- Use the state to pass information between nodes
-- The state persists conversation context and intermediate results
-
-### 3. Structured Output
-Use `llm.with_structured_output(YourSchema)` to get reliable, typed responses from LLMs instead of parsing strings.
-
-### 4. Conversation Memory
-The system maintains conversation context by:
-- Storing conversation turns with metadata
-- Tracking active documents
-- Summarizing long conversations
-- Providing context to subsequent requests
-
-## Testing Your Implementation
-
-1. **Unit Testing**: Test individual functions with sample inputs
-2. **Integration Testing**: Test the complete workflow with various user inputs
-3. **Edge Cases**: Test error handling and edge cases
-
-## Common Pitfalls to Avoid
-
-1. **Missing Error Handling**: Always wrap external calls in try-catch blocks
-2. **Incorrect State Updates**: Ensure you're updating and returning the state correctly
-3. **Prompt Engineering**: Make sure your prompts are clear and specific
-4. **Tool Security**: Validate all inputs to prevent security issues
-
-## Expected Behavior
-
-After implementation, your assistant should be able to:
-- Classify user intents correctly
-- Search and retrieve relevant documents
-- Answer questions with proper source citations
-- Generate comprehensive summaries
-- Perform calculations on document data
-- Maintain conversation context across turns
-
-Good luck with your implementation! Remember to test thoroughly and refer to the existing working code for guidance on patterns and best practices.
+---

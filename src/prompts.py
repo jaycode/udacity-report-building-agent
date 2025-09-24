@@ -1,15 +1,20 @@
 from langchain.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder
 from langchain.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate
 
-# TODO: Implement the intent classification prompt.
+# COMPLETED: Implement the intent classification prompt.
 # This prompt should help the LLM classify user intents into qa, summarization, calculation, or unknown.
 # Refer to README.md Task 3.1 for detailed implementation requirements.
 def get_intent_classification_prompt() -> PromptTemplate:
     """
-    Get the intent classification prompt template - TO BE IMPLEMENTED
+    Get the intent classification prompt template
     """
-    # Your implementation here
-    pass
+    return (
+        "You classify user intent for routing. "
+        "Return a JSON object with fields intent_type, confidence, reasoning. "
+        "intent_type must be one of: qa, summarization, calculation. "
+        "If you are not sure, pick qa"
+        "Use the conversation summary and recent turns as context."
+    )
 
 # Q&A System Prompt
 QA_SYSTEM_PROMPT = """You are a helpful document assistant specializing in answering questions about financial and healthcare documents.
@@ -127,15 +132,27 @@ Present the calculation clearly with all steps shown.
 """
 )
 
-# TODO: Implement the chat prompt template function.
+# COMPLETED: Implement the chat prompt template function.
 # This function should return appropriate prompts based on the intent type.
 # Refer to README.md Task 3.2 for detailed implementation requirements.
 def get_chat_prompt_template(intent_type: str) -> ChatPromptTemplate:
     """
-    Get the appropriate chat prompt template based on intent - TO BE IMPLEMENTED
+    Get the appropriate chat prompt template based on intent
     """
-    # Your implementation here
-    pass
+    if intent_type == "qa":
+        system_prompt = QA_SYSTEM_PROMPT
+    elif intent_type == "summarization":
+        system_prompt = SUMMARIZATION_SYSTEM_PROMPT
+    elif intent_type == "calculation":
+        system_prompt = CALCULATION_SYSTEM_PROMPT
+    else:
+        # Default to QA system prompt
+        system_prompt = QA_SYSTEM_PROMPT
+
+    return ChatPromptTemplate.from_messages([
+        SystemMessagePromptTemplate.from_template(system_prompt),
+        HumanMessagePromptTemplate.from_template("{user_input}")
+    ])
 
 
 # Memory Summary Prompt
