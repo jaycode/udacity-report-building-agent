@@ -18,7 +18,7 @@ class AnswerResponse(BaseModel):
     question: str = Field("The original user question")
     answer: str = Field("The generated answer")
     sources: List[str] = Field("List of source document IDs used")
-    confidence: float = Field("Confidence score between 0 and 1")
+    confidence: float = Field("Confidence score between 0 and 1", ge=0, le=1)
     timestamp: datetime = Field("When the response was generated")
 
 class SummarizationResponse(BaseModel):

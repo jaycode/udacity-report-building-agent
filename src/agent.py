@@ -8,7 +8,8 @@ from schemas import (
     UserIntent, ConversationTurn, SessionState,
     AnswerResponse, SummarizationResponse, CalculationResponse
 )
-from prompts import get_intent_classification_prompt, get_chat_prompt_template
+from prompts import get_intent_classification_prompt, get_chat_prompt_template, \
+    get_response_format_template
 import pdb
 
 # The AgentState class is already implemented for you. 
@@ -47,15 +48,7 @@ def classify_intent(state: AgentState, llm) -> AgentState:
     Classify user intent
     """
     messages = []
-    system_msg = (
-        "You classify user intent for routing. "
-        "Return a JSON object with fields intent_type, confidence, reasoning. "
-        "intent_type must be one of: qa, summarization, calculation. "
-        "If you are not sure, pick qa"
-        "Use the conversation summary and recent turns as context."
-    )
-
-    messages.append(SystemMessage(content=system_msg))
+    messages.append(SystemMessage(content=get_intent_classification_prompt()))
     # Add conversation history
     for msg in state.get("messages", [])[-4:]:  # Last 4 messages
         messages.append(msg)
@@ -74,47 +67,18 @@ def classify_intent(state: AgentState, llm) -> AgentState:
 
 def qa_agent(state: AgentState, llm, tools) -> AgentState:
     """
-    Handle Q&A tasks
+    Handle Q&A tasks - refactored for dynamic prompting
     """
-    messages = []
-    
-    system_msg = f"""You are a helpful document assistant. 
-
-IMPORTANT TOOL USAGE INSTRUCTIONS:
-1. For document_search tool, you MUST provide:
-   - query: Your search query (REQUIRED - cannot be empty)
-   - search_type: Either "keyword" (default), "type", "amount", or "amount_range"
-   - Additional parameters based on search_type:
-     * For amount queries like "over $50,000": use comparison="over", amount=50000
-     * For "under $10,000": use comparison="under", amount=10000
-     * For "between X and Y": use min_amount=X, max_amount=Y
-     * For "around $25,000": use comparison="approximate", amount=25000
-     * For "exactly $100,000": use comparison="exact", amount=100000
-
-2. For document_reader tool, you MUST provide:
-   - doc_id: The exact document ID to read (REQUIRED)
-
-3. For calculator tool, you MUST provide:
-   - expression: The mathematical expression to evaluate (REQUIRED)
-
-4. For document_statistics tool:
-   - No parameters required - shows overview of all documents
-
-Always search for documents first before answering questions about their content.
-Cite your sources by document ID.
-
-Current conversation context: {state.get('conversation_summary', 'No previous context')}
-
-User question: {state["user_input"]}
-"""
-    messages.append(SystemMessage(content=system_msg))
+    messages = get_chat_prompt_template("qa").format_messages(
+        conversation_summary = state.get("conversation_summary", "No previous conversation."),
+        user_input = state["user_input"]
+    )
     
     # Add conversation history
-    for msg in state.get("messages", [])[-4:]:  # Last 4 messages
-        messages.append(msg)
-    
-    messages.append(HumanMessage(content=state["user_input"]))
-    
+    history = state.get("messages", [])[-4:]
+    # Insert before the final (just-appended) message
+    messages[-1:-1] = history
+
     llm_with_tools = llm.bind_tools(tools)
     
     tool_response = llm_with_tools.invoke(messages)
@@ -156,21 +120,27 @@ User question: {state["user_input"]}
     # Get the structured output
     structured_llm = llm.with_structured_output(AnswerResponse)
     
-    # Create a prompt for the final response
-    final_prompt = f"""Based on the tool results and conversation, provide a comprehensive answer to: {state['user_input']}
-    
-    Include the document IDs you referenced as sources."""
-    
-    messages.append(HumanMessage(content=final_prompt))
-    
     # Get structured response
     response = structured_llm.invoke(messages)
     
     # Ensure sources are populated
     if not response.sources and sources:
         response.sources = list(set(sources))
+
+    # Polishing the prompt response with the response format template
+    polisher_prompt_template = get_response_format_template("qa")
+    polisher_prompt = polisher_prompt_template.format(
+        question=response.question,
+        answer=response.answer,
+        sources=response.sources,
+        confidence=response.confidence
+    )
+
+    polished_response = llm.invoke(polisher_prompt)
+    rdict = response.dict()
+    rdict["answer"] = polished_response.content
     
-    state["current_response"] = response.dict()
+    state["current_response"] = rdict
     state["tools_used"] = tools_used
     state["next_step"] = "update_memory"
     
@@ -179,36 +149,17 @@ User question: {state["user_input"]}
 
 def summarization_agent(state: AgentState, llm, tools) -> AgentState:
     """
-    Handle summarization tasks
+    Handle summarization tasks - refactored for dynamic prompting
     """
-    messages = []
-    
-    # System message with explicit tool instructions
-    system_msg = f"""You are an expert document summarizer.
-
-IMPORTANT TOOL USAGE INSTRUCTIONS:
-1. For document_search tool, you MUST provide:
-   - query: Your search query (REQUIRED - use terms from the user's request)
-   - search_type: Either "keyword" (default), "type", or "amount_range"
-
-2. For document_reader tool, you MUST provide:
-   - doc_id: The exact document ID to read (REQUIRED)
-
-First search for relevant documents, then read them to create comprehensive summaries.
-Extract key points and cite document IDs.
-
-Current conversation context: {state.get('conversation_summary', 'No previous context')}
-
-User request: {state["user_input"]}
-"""
-    messages.append(SystemMessage(content=system_msg))
+    messages = get_chat_prompt_template("qa").format_messages(
+        conversation_summary = state.get("conversation_summary", "No previous conversation."),
+        user_input = state["user_input"]
+    )
     
     # Add conversation history
-    for msg in state.get("messages", [])[-4:]:
-        messages.append(msg)
-    
-    # Add current request
-    messages.append(HumanMessage(content=state["user_input"]))
+    history = state.get("messages", [])[-4:]
+    # Insert before the final (just-appended) message
+    messages[-1:-1] = history
     
     # Use tools to gather documents
     llm_with_tools = llm.bind_tools(tools)
@@ -248,12 +199,6 @@ User request: {state["user_input"]}
     # Get structured summary
     structured_llm = llm.with_structured_output(SummarizationResponse)
     
-    final_prompt = f"""Based on the documents you've read, create a comprehensive summary for: {state['user_input']}
-    
-    Extract 3-5 key points and include the document IDs you summarized."""
-    
-    messages.append(HumanMessage(content=final_prompt))
-    
     response = structured_llm.invoke(messages)
     
     if not response.document_ids and doc_ids:
@@ -261,7 +206,19 @@ User request: {state["user_input"]}
     if response.original_length == 0:
         response.original_length = original_content_length
     
-    state["current_response"] = response.dict()
+    # Polishing the prompt response with the response format template
+    polisher_prompt_template = get_response_format_template("summarization")
+    polisher_prompt = polisher_prompt_template.format(
+        documents=response.document_ids,
+        key_points=response.key_points,
+        summary=response.summary
+    )
+
+    polished_response = llm.invoke(polisher_prompt)
+    rdict = response.dict()
+    rdict["summary"] = polished_response.content
+    
+    state["current_response"] = rdict
     state["tools_used"] = tools_used
     state["next_step"] = "update_memory"
     
@@ -270,37 +227,12 @@ User request: {state["user_input"]}
 
 def calculation_agent(state: AgentState, llm, tools) -> AgentState:
     """
-    Handle calculation tasks
+    Handle calculation tasks - refactored for dynamic prompting
     """
-    messages = []
-    
-    # System message with tool instructions
-    system_msg = f"""You are a precise calculator assistant.
-
-IMPORTANT TOOL USAGE INSTRUCTIONS:
-1. For calculator tool, you MUST provide:
-   - expression: The mathematical expression to evaluate (REQUIRED)
-
-2. For document_search tool (to find numbers), you MUST provide:
-   - query: Your search query (REQUIRED - use terms related to the numbers you need)
-
-3. For document_reader tool, you MUST provide:
-   - doc_id: The exact document ID to read (REQUIRED)
-
-Search documents first if you need to find specific numbers, then use the calculator.
-Show your work step by step.
-
-Current conversation context: {state.get('conversation_summary', 'No previous context')}
-
-User request: {state["user_input"]}
-"""
-    messages.append(SystemMessage(content=system_msg))
-    
-    # Add conversation history
-    for msg in state.get("messages", [])[-4:]:
-        messages.append(msg)
-    
-    messages.append(HumanMessage(content=state["user_input"]))
+    messages = get_chat_prompt_template("calculation").format_messages(
+        conversation_summary = state.get("conversation_summary", "No previous conversation."),
+        user_input = state["user_input"]
+    )
     
     llm_with_tools = llm.bind_tools(tools)
     tool_response = llm_with_tools.invoke(messages)
@@ -309,6 +241,7 @@ User request: {state["user_input"]}
     expression = ""
     calc_result = None
     tools_used = []
+    doc_ids = []
     
     if hasattr(tool_response, 'tool_calls') and tool_response.tool_calls:
         for tool_call in tool_response.tool_calls:
@@ -324,7 +257,15 @@ User request: {state["user_input"]}
             if matching_tool:
                 tool_result = matching_tool.invoke(tool_args)
                 tools_used.append(tool_name)
-                
+
+                # Collect doc IDs from search results
+                if tool_name == "document_search":
+                    doc_ids.extend(re.findall(r'ID: ([\w-]+)', str(tool_result)))
+
+                # Collect from reader directly via args
+                if tool_name == "document_reader" and "doc_id" in tool_args:
+                    doc_ids.append(tool_args["doc_id"])
+
                 if tool_name == "calculator":
                     expression = tool_args.get("expression", "")
                     # Extract result from output
@@ -343,18 +284,18 @@ User request: {state["user_input"]}
     # Refer to README.md Task 2.3 for detailed implementation requirements.
     
     structured_llm = llm.with_structured_output(CalculationResponse)
-    final_prompt = f"""
-Based on the calculation just performed, provide a clear, step-by-step explanation of how you 
-arrived at the result for: {state['user_input']}
-
-Include:
-- The mathematical expression used
-- The result
-- A step-by-step explanation
-- Any relevant units or sources
-"""
-    messages.append(HumanMessage(content=final_prompt))
     response = structured_llm.invoke(messages)
+
+    # Polishing the prompt response with the response format template
+    polisher_prompt_template = get_response_format_template("calculation")
+    sources = ",".join(set(doc_ids))
+    polisher_prompt = polisher_prompt_template.format(
+        expression=response.expression,
+        result=response.result,
+        explanation=response.explanation,
+        sources=sources
+    )
+    polished_response = llm.invoke(polisher_prompt)
 
     # Fill in missing fields if possible
     if not response.expression and expression:
@@ -362,7 +303,10 @@ Include:
     if not response.result and calc_result is not None:
         response.result = calc_result
 
-    state["current_response"] = response.dict()
+    rdict = response.dict()
+    rdict["explanation"] = polished_response.content
+
+    state["current_response"] = rdict
     state["tools_used"] = tools_used
     state["next_step"] = "update_memory"
     return state

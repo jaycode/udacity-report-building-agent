@@ -1,5 +1,6 @@
 from langchain.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder
 from langchain.prompts.chat import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+import pdb
 
 # COMPLETED: Implement the intent classification prompt.
 # This prompt should help the LLM classify user intents into qa, summarization, calculation, or unknown.
@@ -154,6 +155,21 @@ def get_chat_prompt_template(intent_type: str) -> ChatPromptTemplate:
         HumanMessagePromptTemplate.from_template("{user_input}")
     ])
 
+
+def get_response_format_template(intent_type: str) -> ChatPromptTemplate:
+    """
+    Get the appropriate response prompt template based on intent
+    """
+    if intent_type == "qa":
+        response_format = QA_RESPONSE_FORMAT
+    elif intent_type == "summarization":
+        response_format = SUMMARY_RESPONSE_FORMAT
+    elif intent_type == "calculation":
+        response_format = CALCULATION_RESPONSE_FORMAT
+    else:
+        # Default to QA system prompt
+        response_format = QA_RESPONSE_FORMAT
+    return response_format.template
 
 # Memory Summary Prompt
 MEMORY_SUMMARY_PROMPT = PromptTemplate(
